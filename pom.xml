@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>de.ebrahim</groupId>
+  <artifactId>outbox-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <name>Transactional Outbox</name>
+
+  <modules>
+    <module>outbox-core</module>
+    <module>outbox-runner</module>
+    <module>outbox-example</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <postgresql.version>42.7.4</postgresql.version>
+    <jnats.version>2.20.4</jnats.version>
+    <jackson.version>2.17.2</jackson.version>
+    <slf4j.version>2.0.16</slf4j.version>
+    <hikari.version>5.1.0</hikari.version>
+    <junit.version>5.11.3</junit.version>
+    <testcontainers.version>1.20.4</testcontainers.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>${postgresql.version}</version></dependency>
+      <dependency><groupId>io.nats</groupId><artifactId>jnats</artifactId><version>${jnats.version}</version></dependency>
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
+      <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>${slf4j.version}</version></dependency>
+      <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>${slf4j.version}</version></dependency>
+      <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>${hikari.version}</version></dependency>
+      <dependency><groupId>org.junit</groupId><artifactId>junit-bom</artifactId><version>${junit.version}</version><type>pom</type><scope>import</scope></dependency>
+      <dependency><groupId>org.testcontainers</groupId><artifactId>testcontainers-bom</artifactId><version>${testcontainers.version}</version><type>pom</type><scope>import</scope></dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.5.2</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

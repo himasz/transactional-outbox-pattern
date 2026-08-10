@@ -1,0 +1,77 @@
+name: outbox
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: outbox
+      POSTGRES_USER: outbox
+      POSTGRES_PASSWORD: outbox
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outbox -d outbox"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data"]   # JetStream with file storage
+    ports: ["4222:4222", "8222:8222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # --- Two relay instances. The Postgres lease elector gives exactly one of them
+  # --- leadership; the other idles as a hot standby. Kill the leader with
+  # --- `docker compose kill relay-1` and watch relay-2 take over.
+  relay-1:
+    build: .
+    command: ["java", "-jar", "/app/relay.jar"]
+    environment: { INSTANCE_ID: relay-1 }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  relay-2:
+    build: .
+    command: ["java", "-jar", "/app/relay.jar"]
+    environment: { INSTANCE_ID: relay-2 }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  # --- Three service replicas writing concurrently. Concurrency here is the
+  # --- point: it is what generates the sequence holes the relay must survive.
+  producer-1:
+    build: .
+    command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.ProducerMain"]
+    environment: { INSTANCE_ID: producer-1, INTERVAL_MS: "400" }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  producer-2:
+    build: .
+    command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.ProducerMain"]
+    environment: { INSTANCE_ID: producer-2, INTERVAL_MS: "400" }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  producer-3:
+    build: .
+    command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.ProducerMain"]
+    environment: { INSTANCE_ID: producer-3, INTERVAL_MS: "400" }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  # --- Verifies ordering end to end and reports any FIFO violation.
+  consumer:
+    build: .
+    command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.ConsumerMain"]
+    depends_on:
+      nats: { condition: service_healthy }
