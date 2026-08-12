@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.transport;
 
 import io.nats.client.Connection;
 import io.nats.client.Dispatcher;

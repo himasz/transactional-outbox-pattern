@@ -1,6 +1,7 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.store;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.ebrahim.outbox.OutboxMessage;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;

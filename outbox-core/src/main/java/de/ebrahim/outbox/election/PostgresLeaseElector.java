@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.election;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

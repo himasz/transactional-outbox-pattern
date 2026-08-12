@@ -1,5 +1,8 @@
 package de.ebrahim.outbox;
 
+import de.ebrahim.outbox.store.OutboxWriter;
+import de.ebrahim.outbox.transport.WakeupSignal;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;

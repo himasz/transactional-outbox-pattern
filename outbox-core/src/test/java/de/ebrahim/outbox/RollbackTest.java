@@ -1,5 +1,6 @@
 package de.ebrahim.outbox;
 
+import de.ebrahim.outbox.election.MockLeaderElector;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

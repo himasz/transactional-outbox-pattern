@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.transport;
 
 import java.time.Duration;
 import java.util.concurrent.ArrayBlockingQueue;

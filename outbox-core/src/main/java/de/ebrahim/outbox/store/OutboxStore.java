@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

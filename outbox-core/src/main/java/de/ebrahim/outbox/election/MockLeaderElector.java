@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.election;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;

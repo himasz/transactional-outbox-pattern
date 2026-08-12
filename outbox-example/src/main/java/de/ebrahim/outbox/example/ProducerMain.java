@@ -2,7 +2,10 @@ package de.ebrahim.outbox.example;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import de.ebrahim.outbox.*;
+import de.ebrahim.outbox.Outbox;
+import de.ebrahim.outbox.OutboxMessage;
+import de.ebrahim.outbox.store.Schema;
+import de.ebrahim.outbox.transport.NatsWakeupSignal;
 import io.nats.client.Nats;
 import io.nats.client.Options;
 import org.slf4j.Logger;

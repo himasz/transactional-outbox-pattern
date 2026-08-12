@@ -1,4 +1,6 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.transport;
+
+import de.ebrahim.outbox.store.OutboxStore;
 
 /**
  * Broker abstraction. Exists so the relay logic can be tested without a broker,

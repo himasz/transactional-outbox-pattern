@@ -1,5 +1,8 @@
 package de.ebrahim.outbox;
 
+import de.ebrahim.outbox.election.MockLeaderElector;
+import de.ebrahim.outbox.transport.MessagePublisher;
+import de.ebrahim.outbox.transport.WakeupSignal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
