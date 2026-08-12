@@ -7,7 +7,7 @@
 COMPOSE ?= docker compose
 MVN     ?= mvn
 
-.PHONY: help build test up down example logs logs-relay logs-consumer demo-failover psql clean
+.PHONY: help build test up down example logs logs-relay logs-consumer demo-failover verify psql clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -39,6 +39,9 @@ demo-failover: ## Kill relay-1 and watch relay-2 acquire the lease
 	$(COMPOSE) kill relay-1
 	@echo "relay-1 killed; relay-2 should take the lease within ~10s"
 	$(COMPOSE) logs -f relay-2 consumer
+
+verify: ## Prove the guarantees with SQL: no rolled-back order published, none lost
+	@$(COMPOSE) exec -T postgres psql -U outbox -d outbox -f - < verify.sql
 
 psql: ## Open a psql shell against the example database
 	$(COMPOSE) exec postgres psql -U outbox -d outbox

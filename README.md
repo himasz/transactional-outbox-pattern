@@ -21,10 +21,42 @@ violation is printed as an error.
 
 Two things worth watching:
 
-- Every tenth producer transaction is rolled back on purpose. Those orders never reach the
-  consumer, which is the rollback requirement made visible.
+- Every tenth producer transaction is rolled back on purpose. Run `make verify` to *prove* those
+  orders were never published — see **Verifying the rollback guarantee** below.
 - `make demo-failover` kills the active relay. The standby acquires the lease within about ten
   seconds and the stream continues, in order, from where the cursor left off.
+
+## Verifying the rollback guarantee
+
+"The transaction rolled back so nothing was published" cannot be checked by reading logs. A
+missing message id looks **identical** whether the transaction was rolled back deliberately or
+the relay silently skipped it — so a log line saying "gap expected" proves nothing, and would go
+on printing happily while the pattern was broken.
+
+The demo therefore records intent and outcome as data:
+
+- when a producer rolls back, it writes the ref to `rollback_audit` in a **separate, committed**
+  transaction;
+- the consumer writes every ref it receives to `delivered`, upserting so redeliveries are counted
+  rather than hidden.
+
+`make verify` then reduces both guarantees to SQL that must return zero rows:
+
+```sql
+-- nothing rolled back may ever have been delivered
+SELECT a.ref FROM rollback_audit a JOIN delivered d ON d.ref = a.ref;
+
+-- nothing committed may be missing from the delivered set
+SELECT o.ref FROM orders o LEFT JOIN delivered d ON d.ref = o.ref WHERE d.ref IS NULL;
+```
+
+The second query is the one that catches a broken gap-free read: a lost message shows up as a
+committed order with no delivery. `duplicates > 0` in the summary is expected and correct —
+delivery is at-least-once.
+
+`rollback_audit` and `delivered` are **demo instrumentation only**. They are created by the
+example, not by `schema.sql`; the library has no opinion about how you observe your own
+rollbacks.
 
 ## The problem, and why this shape
 
@@ -66,6 +98,19 @@ there is nothing to update per message and retention becomes a single range dele
 `OutboxWriter.enqueue(Connection, OutboxMessage)` takes **the caller's** connection. There is
 only ever one resource manager in the transaction. `enqueue` throws if the connection is in
 auto-commit mode, because that silently defeats the entire pattern.
+
+**Two ways a caller can still break this**, both covered by tests in `RollbackTest` and neither
+detectable by the library:
+
+- **Enqueueing on a second connection.** If the message is written through a different connection
+  than the business writes, it is a different transaction and commits independently. Rolling back
+  the business transaction then leaves an orphaned event for an order that does not exist. The
+  auto-commit guard in `enqueue` catches the careless version of this; it cannot catch a second
+  connection that has auto-commit switched off, because JDBC offers no portable way to ask whether
+  two connections share a logical transaction.
+- **Rolling back to a savepoint after enqueueing.** The outbox row is undone while the business
+  rows survive, producing committed data with no event. Never enqueue inside a savepoint you might
+  roll back.
 
 ### Suitable for multiple replicas
 
@@ -191,7 +236,7 @@ NATS-specific.
 
 | Test | What it pins down |
 |------|-------------------|
-| `RollbackTest` | Rollback publishes nothing; commit publishes exactly once; auto-commit is rejected |
+| `RollbackTest` | Rollback publishes nothing (both deliberate and constraint-driven); commit publishes exactly once; auto-commit is rejected; the second-connection and savepoint anti-patterns are pinned as known limitations |
 | `FifoOrderingTest` | The sequence hole is not skipped; concurrent writers yield a strictly increasing stream |
 | `FencingTest` | Followers idle; a stale token is rejected; a lease lost mid-batch stops publishing; the Postgres lease is exclusive |
 | `WakeupLatencyTest` | A commit wakes the relay without waiting for the poll interval |
