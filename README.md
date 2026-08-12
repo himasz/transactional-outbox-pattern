@@ -3,6 +3,9 @@
 A library implementation of the Transactional Outbox pattern for PostgreSQL and NATS JetStream,
 built for services running as multiple replicas without distributed transactions.
 
+See [FLOW.md](FLOW.md) for a start-to-finish walkthrough of `make example`, from a producer's
+commit to the consumer's verification.
+
 ## Quick start
 
 ```bash
@@ -26,6 +29,35 @@ Two things worth watching:
   orders were never published — see **Verifying the rollback guarantee** below.
 - `make demo-failover` kills the active relay. The standby acquires the lease within about ten
   seconds and the stream continues, in order, from where the cursor left off.
+
+## Layout
+
+`de.ebrahim.outbox` holds only the public entry points; everything else is one subpackage per
+responsibility, each swappable behind its own interface.
+
+```
+de.ebrahim.outbox
+├── Outbox, RelayEngine, RelayConfig, OutboxMessage    ← public API
+├── store/       OutboxWriter, OutboxStore, Schema
+├── transport/   WakeupSignal, NatsWakeupSignal, MessagePublisher, NatsPublisher
+└── election/    LeaderElector, MockLeaderElector, PostgresLeaseElector
+```
+
+Who calls whom:
+
+```
+Outbox ──writes via──► store.OutboxWriter
+       ──nudges via──► transport.WakeupSignal
+
+RelayEngine ──reads/advances cursor via──► store.OutboxStore
+            ──publishes via─────────────► transport.MessagePublisher
+            ──elects leader via─────────► election.LeaderElector
+            ──wakes on──────────────────► transport.WakeupSignal
+```
+
+`RelayEngine` is the only class that depends on all three subpackages — it exists to wire
+election, storage and transport into the relay loop. `store`, `transport` and `election` never
+depend on each other, so each is testable and replaceable on its own.
 
 ## Verifying the rollback guarantee
 
