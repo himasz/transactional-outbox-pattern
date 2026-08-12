@@ -30,6 +30,12 @@ public final class RelayEngine implements AutoCloseable {
 
     private volatile boolean running;
     private volatile Thread thread;
+    // Separate from `running`: `running` gates the start()/run() background loop
+    // and is false until start() is called, but drain() must also work for a
+    // caller that only ever invokes tick() directly (every test does). `closed`
+    // defaults false so that works, while still letting close() cut a drain()
+    // that is already in progress short.
+    private volatile boolean closed;
 
     /** Token we have already stamped on the cursor; -1 forces a re-claim. */
     private long claimedToken = -1;
@@ -95,7 +101,7 @@ public final class RelayEngine implements AutoCloseable {
     }
 
     private void drain(LeaderElector.Lease lease) throws Exception {
-        while (running && lease.isValid()) {
+        while (!closed && lease.isValid()) {
             long cursor = store.readCursor();
             List<OutboxStore.Row> batch = store.fetchBatch(cursor, config.batchSize());
             if (batch.isEmpty()) return;
@@ -152,6 +158,7 @@ public final class RelayEngine implements AutoCloseable {
     @Override
     public void close() {
         running = false;
+        closed = true;
         Thread t = thread;
         if (t != null) t.interrupt();
     }

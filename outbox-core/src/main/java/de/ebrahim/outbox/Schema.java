@@ -23,11 +23,7 @@ public final class Schema {
     public static void apply(DataSource dataSource) throws SQLException, IOException {
         String ddl = read("schema.sql");
         try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
-            for (String statement : ddl.split(";")) {
-                if (!statement.isBlank()) {
-                    st.execute(statement);
-                }
-            }
+            st.execute(ddl);
         }
     }
 
