@@ -23,7 +23,13 @@ public final class Schema {
     public static void apply(DataSource dataSource) throws SQLException, IOException {
         String ddl = read("schema.sql");
         try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
-            st.execute(ddl);
+            // Postgres' own IF NOT EXISTS is not safe against two callers applying
+            // the schema at the same instant (e.g. several service replicas booting
+            // together): both can see "doesn't exist" and race on the pg_type
+            // catalog. A transaction-scoped advisory lock serializes them; it is
+            // released automatically at the end of this statement's implicit
+            // transaction, so there is no separate unlock to forget.
+            st.execute("SELECT pg_advisory_xact_lock(hashtext('de.ebrahim.outbox.schema')); " + ddl);
         }
     }
 

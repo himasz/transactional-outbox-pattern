@@ -31,11 +31,12 @@ public final class ProducerMain {
     private static final Logger log = LoggerFactory.getLogger(ProducerMain.class);
 
     public static void main(String[] args) throws Exception {
-        String jdbcUrl  = env("PG_URL", "jdbc:postgresql://postgres:5432/outbox");
-        String natsUrl  = env("NATS_URL", "nats://nats:4222");
+        String jdbcUrl = env("PG_URL", "jdbc:postgresql://postgres:5432/outbox");
+        String natsUrl = env("NATS_URL", "nats://nats:4222");
         String instance = env("INSTANCE_ID", "producer");
         String wakeSubj = env("WAKEUP_SUBJECT", "outbox.wakeup");
-        int intervalMs  = Integer.parseInt(env("INTERVAL_MS", "300"));
+        int intervalMs = Integer.parseInt(env("INTERVAL_MS", "300"));
+        String runId = env("RUN_ID", Long.toHexString(System.currentTimeMillis()).substring(6));
 
         HikariConfig hikari = new HikariConfig();
         hikari.setJdbcUrl(jdbcUrl);
@@ -58,7 +59,7 @@ public final class ProducerMain {
                 log.info("producer {} writing every {}ms", instance, intervalMs);
                 for (int n = 1; ; n++) {
                     boolean rollback = n % 10 == 0;
-                    String ref = instance + "-order-" + n;
+                    String ref = instance + "-" + runId + "-" + n;
                     try {
                         placeOrder(outbox, ref, rollback);
                         log.info("committed {}", ref);
@@ -119,19 +120,25 @@ public final class ProducerMain {
 
     private static void createBusinessTable(javax.sql.DataSource ds) throws Exception {
         try (var c = ds.getConnection(); Statement st = c.createStatement()) {
-            st.execute("CREATE TABLE IF NOT EXISTS orders ("
-                    + "id BIGSERIAL PRIMARY KEY, ref TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT now())");
-            // Demo-only tables. They are NOT part of the library schema: the
-            // library has no opinion about how you observe your own rollbacks.
-            st.execute("CREATE TABLE IF NOT EXISTS rollback_audit ("
-                    + "ref TEXT PRIMARY KEY, recorded_at TIMESTAMPTZ DEFAULT now())");
-            st.execute("CREATE TABLE IF NOT EXISTS delivered ("
+            // Same race as Schema.apply: three producer replicas boot at once and
+            // IF NOT EXISTS alone doesn't serialize them. Advisory-lock the whole
+            // batch (transaction-scoped, released when this statement's implicit
+            // transaction ends).
+            st.execute("SELECT pg_advisory_xact_lock(hashtext('de.ebrahim.outbox.example.schema'));"
+                    + "CREATE TABLE IF NOT EXISTS orders ("
+                    + "id BIGSERIAL PRIMARY KEY, ref TEXT UNIQUE NOT NULL, created_at TIMESTAMPTZ DEFAULT now());"
+                    // Demo-only tables. They are NOT part of the library schema: the
+                    // library has no opinion about how you observe your own rollbacks.
+                    + "CREATE TABLE IF NOT EXISTS rollback_audit ("
+                    + "ref TEXT PRIMARY KEY, recorded_at TIMESTAMPTZ DEFAULT now());"
+                    + "CREATE TABLE IF NOT EXISTS delivered ("
                     + "ref TEXT PRIMARY KEY, deliveries INT NOT NULL DEFAULT 1,"
                     + " first_seen TIMESTAMPTZ DEFAULT now())");
         }
     }
 
-    private static final class DeliberateRollback extends RuntimeException { }
+    private static final class DeliberateRollback extends RuntimeException {
+    }
 
     private static String env(String key, String fallback) {
         String value = System.getenv(key);

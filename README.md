@@ -9,6 +9,7 @@ built for services running as multiple replicas without distributed transactions
 make build      # compile and package
 make test       # test suite (needs a Docker socket for Testcontainers)
 make example    # stand up the full distributed demo and follow the consumer
+make verify     # counts summary and relay lag
 make down       # tear everything down
 ```
 
