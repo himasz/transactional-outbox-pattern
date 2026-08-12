@@ -271,7 +271,7 @@ NATS-specific.
 |------|-------------------|
 | `RollbackTest` | Rollback publishes nothing (both deliberate and constraint-driven); commit publishes exactly once; auto-commit is rejected; the second-connection and savepoint anti-patterns are pinned as known limitations |
 | `FifoOrderingTest` | The sequence hole is not skipped; concurrent writers yield a strictly increasing stream |
-| `FencingTest` | Followers idle; a stale token is rejected; a lease lost mid-batch stops publishing; the Postgres lease is exclusive |
+| `FencingTest` | Followers idle; a stale token is rejected; a lease lost mid-batch stops publishing; the Postgres lease is exclusive; a successor resumes from the cursor after a crash, replaying only the un-advanced tail |
 | `WakeupLatencyTest` | A commit wakes the relay without waiting for the poll interval |
 
 ## Known limitations and extensions
