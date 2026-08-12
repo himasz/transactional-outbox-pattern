@@ -28,7 +28,9 @@ public final class Outbox implements AutoCloseable {
         this.wakeup = wakeup;
     }
 
-    /** A unit of work that may both mutate business tables and enqueue messages. */
+    /**
+     * A unit of work that may both mutate business tables and enqueue messages.
+     */
     @FunctionalInterface
     public interface Work<T> {
         T run(Connection tx, OutboxWriter outbox) throws Exception;
@@ -65,12 +67,16 @@ public final class Outbox implements AutoCloseable {
         return result;
     }
 
-    /** The raw writer, for callers that own their own transaction boundary. */
+    /**
+     * The raw writer, for callers that own their own transaction boundary.
+     */
     public OutboxWriter writer() {
         return writer;
     }
 
-    /** Call after your own commit succeeds when not using {@link #inTransaction}. */
+    /**
+     * Call after your own commit succeeds when not using {@link #inTransaction}.
+     */
     public void nudge() {
         wakeup.signal();
     }

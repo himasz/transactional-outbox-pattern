@@ -28,23 +28,25 @@ public final class ProducerMain {
     private static final Logger log = LoggerFactory.getLogger(ProducerMain.class);
 
     public static void main(String[] args) throws Exception {
-        String jdbcUrl  = env("PG_URL", "jdbc:postgresql://postgres:5432/outbox");
-        String natsUrl  = env("NATS_URL", "nats://nats:4222");
-        String instance = env("INSTANCE_ID", "producer");
+        String jdbcUrl = env("PG_URL", "jdbc:postgresql://postgres:5432/outbox");
+        String natsUrl = env("NATS_URL", "nats://nats:4222");
+        String instanceId = env("INSTANCE_ID", "producer");
         String wakeSubj = env("WAKEUP_SUBJECT", "outbox.wakeup");
-        int intervalMs  = Integer.parseInt(env("INTERVAL_MS", "300"));
+        int intervalMs = Integer.parseInt(env("INTERVAL_MS", "300"));
 
         HikariConfig hikari = new HikariConfig();
         hikari.setJdbcUrl(jdbcUrl);
         hikari.setUsername(env("PG_USER", "outbox"));
         hikari.setPassword(env("PG_PASSWORD", "outbox"));
         hikari.setMaximumPoolSize(5);
-        hikari.setPoolName("producer-" + instance);
+        hikari.setPoolName("producer-" + instanceId);
 
-        try (HikariDataSource dataSource = new HikariDataSource(hikari);
-             io.nats.client.Connection nats = Nats.connect(
-                     new Options.Builder().server(natsUrl).maxReconnects(-1)
-                             .reconnectWait(Duration.ofSeconds(1)).build())) {
+        Options options = new Options
+                .Builder()
+                .server(natsUrl)
+                .maxReconnects(-1)
+                .reconnectWait(Duration.ofSeconds(1)).build();
+        try (HikariDataSource dataSource = new HikariDataSource(hikari); io.nats.client.Connection nats = Nats.connect(options)) {
 
             // Only one replica needs to apply the schema; the others no-op
             // thanks to IF NOT EXISTS.
@@ -52,15 +54,15 @@ public final class ProducerMain {
             createBusinessTable(dataSource);
 
             try (Outbox outbox = new Outbox(dataSource, new NatsWakeupSignal(nats, wakeSubj))) {
-                log.info("producer {} writing every {}ms", instance, intervalMs);
+                log.info("producer {} writing every {}ms", instanceId, intervalMs);
                 for (int n = 1; ; n++) {
                     boolean rollback = n % 10 == 0;
                     try {
-                        placeOrder(outbox, instance, n, rollback);
+                        placeOrder(outbox, instanceId, n, rollback);
                     } catch (DeliberateRollback expected) {
-                        log.info("{} order {} rolled back on purpose: no event will be published", instance, n);
+                        log.info("{} order {} rolled back on purpose: no event will be published", instanceId, n);
                     } catch (Exception e) {
-                        log.error("{} order {} failed", instance, n, e);
+                        log.error("{} order {} failed", instanceId, n, e);
                     }
                     Thread.sleep(ThreadLocalRandom.current().nextInt(intervalMs));
                 }
@@ -73,24 +75,25 @@ public final class ProducerMain {
      * local transaction, and the relay nudged only after that transaction
      * commits.
      */
-    private static void placeOrder(Outbox outbox, String instance, int n, boolean rollback) throws Exception {
-        String ref = instance + "-order-" + n;
-        outbox.inTransaction((tx, writer) -> {
+    private static void placeOrder(Outbox outbox, String instanceId, int n, boolean rollback) throws Exception {
+        String ref = instanceId + "-order-" + n;
+        Outbox.Work<Object> work = (tx, outboxWriter) -> {
             try (Statement st = tx.createStatement()) {
                 st.execute("INSERT INTO orders (ref) VALUES ('" + ref + "')");
             }
-            writer.enqueue(tx, OutboxMessage
+            outboxWriter.enqueue(tx, OutboxMessage
                     .of("orders.created", "{\"ref\":\"" + ref + "\"}")
                     .withHeader("Content-Type", "application/json")
-                    .withHeader("Producer", instance));
+                    .withHeader("Producer", instanceId));
             if (rollback) {
                 // Any exception rolls the transaction back, taking the outbox row
                 // with it. No compensating action is needed or possible.
                 throw new DeliberateRollback();
             }
             return null;
-        });
-        log.info("{} committed {}", instance, ref);
+        };
+        outbox.inTransaction(work);
+        log.info("{} committed {}", instanceId, ref);
     }
 
     private static void createBusinessTable(javax.sql.DataSource ds) throws Exception {
@@ -100,7 +103,8 @@ public final class ProducerMain {
         }
     }
 
-    private static final class DeliberateRollback extends RuntimeException { }
+    private static final class DeliberateRollback extends RuntimeException {
+    }
 
     private static String env(String key, String fallback) {
         String value = System.getenv(key);
