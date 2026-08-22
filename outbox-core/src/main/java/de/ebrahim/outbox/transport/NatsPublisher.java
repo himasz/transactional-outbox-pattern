@@ -1,5 +1,6 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.transport;
 
+import de.ebrahim.outbox.store.OutboxStore;
 import io.nats.client.JetStream;
 import io.nats.client.api.PublishAck;
 import io.nats.client.impl.Headers;

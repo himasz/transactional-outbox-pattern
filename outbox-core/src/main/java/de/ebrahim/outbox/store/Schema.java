@@ -1,4 +1,4 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.store;
 
 import javax.sql.DataSource;
 import java.io.IOException;

@@ -1,7 +1,9 @@
-package de.ebrahim.outbox;
+package de.ebrahim.outbox.store;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -18,6 +20,8 @@ import java.util.UUID;
  * are where the FIFO and at-least-once guarantees actually live.
  */
 public final class OutboxStore {
+
+    private static final Logger log = LoggerFactory.getLogger(OutboxStore.class);
 
     /** One unpublished message, as read by the relay. */
     public record Row(long id, String subject, UUID messageId, Map<String, String> headers, byte[] payload) { }
@@ -159,6 +163,7 @@ public final class OutboxStore {
             return raw == null || raw.isBlank() ? Map.of() : json.readValue(raw, HEADER_TYPE);
         } catch (Exception e) {
             // A malformed header blob must not stall the FIFO queue forever.
+            log.warn("Message dose not contain headers", e);
             return Map.of();
         }
     }

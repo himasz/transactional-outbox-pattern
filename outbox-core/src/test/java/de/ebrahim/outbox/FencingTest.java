@@ -1,12 +1,17 @@
 package de.ebrahim.outbox;
 
+import de.ebrahim.outbox.election.MockLeaderElector;
+import de.ebrahim.outbox.election.PostgresLeaseElector;
+import de.ebrahim.outbox.store.OutboxStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -130,5 +135,49 @@ class FencingTest extends OutboxTestBase {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Test
+    @DisplayName("a successor resumes from the cursor a crashed leader actually left behind")
+    void successorResumesAfterCrash() throws Exception {
+        // Normal operation: leader A publishes 1, 2 and cleanly advances the cursor.
+        enqueue(2);
+        MockLeaderElector electorA = MockLeaderElector.alwaysLeader();
+        relay(new RecordingPublisher(), electorA).tick();
+        assertEquals(2, store.readCursor());
+
+        // A crashes on its next tick, after the broker has id 3 but before the
+        // cursor is advanced past it — publish and cursor-advance are not atomic,
+        // and this is the gap that leaves. The throw happens inside the publish
+        // loop, so the post-loop advanceCursor() is never reached.
+        enqueue(3);
+        RecordingPublisher crashingPublisher = new RecordingPublisher() {
+            @Override
+            public void publish(OutboxStore.Row row) {
+                super.publish(row);
+                if (published.size() == 1) throw new RuntimeException("simulated crash");
+            }
+        };
+        assertThrows(RuntimeException.class, () -> relay(crashingPublisher, electorA).tick());
+        assertEquals(List.of(3L), crashingPublisher.ids());
+        assertEquals(2, store.readCursor(), "the crash happened before the cursor could advance");
+
+        // A successor, with its own elector, takes over under a strictly higher
+        // token than A ever used.
+        MockLeaderElector electorB = new MockLeaderElector(false);
+        electorB.grant();
+        assertTrue(electorB.currentToken() > electorA.currentToken());
+
+        RecordingPublisher publisherB = new RecordingPublisher();
+        relay(publisherB, electorB).tick();
+
+        // B resumes from the cursor A actually left (2), not from A's in-memory
+        // progress: id 3 is legitimately replayed, because it reached the broker
+        // but was never committed past the cursor. Ids 1 and 2 are NOT replayed,
+        // because they already were. The combined stream across both legs is
+        // therefore 1, 2, 3, 3, 4, 5 — not strictly monotonic — which is exactly
+        // what "at-least-once, consumers must be idempotent" means in practice.
+        assertEquals(List.of(3L, 4L, 5L), publisherB.ids());
+        assertEquals(5, store.readCursor());
     }
 }

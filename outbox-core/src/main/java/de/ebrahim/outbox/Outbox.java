@@ -1,5 +1,10 @@
 package de.ebrahim.outbox;
 
+import de.ebrahim.outbox.store.OutboxWriter;
+import de.ebrahim.outbox.transport.WakeupSignal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -19,6 +24,7 @@ import java.sql.SQLException;
  */
 public final class Outbox implements AutoCloseable {
 
+    private static final Logger log = LoggerFactory.getLogger(Outbox.class);
     private final DataSource dataSource;
     private final OutboxWriter writer = new OutboxWriter();
     private final WakeupSignal wakeup;
@@ -63,7 +69,11 @@ public final class Outbox implements AutoCloseable {
             }
         }
         // Reached only when commit() returned without throwing.
-        wakeup.signal();
+        try {
+            wakeup.signal();
+        } catch (Exception e) {
+            log.warn("outbox commit succeeded, but relay nudge failed", e);
+        }
         return result;
     }
 
