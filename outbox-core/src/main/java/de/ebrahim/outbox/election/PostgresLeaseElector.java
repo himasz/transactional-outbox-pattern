@@ -39,6 +39,16 @@ public final class PostgresLeaseElector implements LeaderElector {
      * is only taken if we already own it or the incumbent's lease has expired.
      * The token increments only on a change of owner, so a leader renewing
      * keeps its token and does not needlessly invalidate its own in-flight work.
+     * A separate sequence like:
+     * <p>
+     * SELECT owner FROM outbox_lease WHERE name = 'relay'
+     * if (owner == null || expires_at < now()) {
+     * UPDATE outbox_lease SET owner = me ...
+     * }
+     * <p>
+     * has a race condition: two processes can both see the lease expired, then both try to take it.
+     * The single-statement ON CONFLICT DO UPDATE ... WHERE ... avoids that because
+     * the decision and the write happen in one atomic step.
      */
     private static final String ACQUIRE_SQL = """
             INSERT INTO outbox_lease (name, owner, fencing_token, expires_at)
@@ -103,8 +113,15 @@ public final class PostgresLeaseElector implements LeaderElector {
                 // silently extending it past what the database recorded.
                 long deadline = System.nanoTime() + ttl.minus(safetyMargin).toNanos();
                 Lease lease = new Lease() {
-                    @Override public long fencingToken() { return token; }
-                    @Override public boolean isValid() { return System.nanoTime() < deadline; }
+                    @Override
+                    public long fencingToken() {
+                        return token;
+                    }
+
+                    @Override
+                    public boolean isValid() {
+                        return System.nanoTime() < deadline;
+                    }
                 };
                 current = lease;
                 nextRenewNanos = System.nanoTime() + renewInterval.toNanos();
