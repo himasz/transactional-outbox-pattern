@@ -73,6 +73,10 @@ public final class RelayEngine implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Exception e) {
+                // close() interrupts this thread; on Postgres that can surface as a
+                // plain SQLException (socket closed) rather than InterruptedException.
+                // Shutting down, not a real failure - don't log or back off.
+                if (!running) break;
                 log.error("relay tick failed, backing off", e);
                 sleep(config.errorBackoff().toMillis());
             }

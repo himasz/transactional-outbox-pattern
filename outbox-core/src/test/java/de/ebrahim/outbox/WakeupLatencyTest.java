@@ -31,8 +31,8 @@ class WakeupLatencyTest extends OutboxTestBase {
         MessagePublisher publisher = row -> delivered.countDown();
 
         RelayConfig config = RelayConfig.defaults().withIdleTimeout(Duration.ofSeconds(30));
-        try (RelayEngine engine = new RelayEngine(
-                store, publisher, MockLeaderElector.alwaysLeader(), wakeup, config)) {
+        try (RelayEngine engine =
+                     new RelayEngine(store, publisher, MockLeaderElector.alwaysLeader(), wakeup, config)) {
             engine.start();
 
             long startedAt = System.nanoTime();
