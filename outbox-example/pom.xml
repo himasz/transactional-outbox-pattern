@@ -13,6 +13,7 @@
 
   <dependencies>
     <dependency><groupId>de.ebrahim</groupId><artifactId>outbox-core</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>de.ebrahim</groupId><artifactId>inbox-core</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
     <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></dependency>
     <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId></dependency>

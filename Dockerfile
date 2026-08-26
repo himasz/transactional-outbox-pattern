@@ -6,11 +6,13 @@ WORKDIR /src
 # Copy poms first so dependency resolution is cached independently of sources.
 COPY pom.xml .
 COPY outbox-core/pom.xml     outbox-core/
+COPY inbox-core/pom.xml      inbox-core/
 COPY outbox-runner/pom.xml   outbox-runner/
 COPY outbox-example/pom.xml  outbox-example/
 RUN mvn -B -q dependency:go-offline -DskipTests || true
 
 COPY outbox-core     outbox-core
+COPY inbox-core      inbox-core
 COPY outbox-runner   outbox-runner
 COPY outbox-example  outbox-example
 # Tests need a Docker socket (Testcontainers), so they are skipped in the image

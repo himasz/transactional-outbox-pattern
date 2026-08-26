@@ -30,7 +30,9 @@ services:
   relay-1:
     build: .
     command: ["java", "-jar", "/app/relay.jar"]
-    environment: { INSTANCE_ID: relay-1 }
+    # The stream carries both the orders the producers write and the shipments
+    # the fulfilment service chains off them, so one relay serves both.
+    environment: { INSTANCE_ID: relay-1, STREAM_SUBJECTS: "orders.>,shipments.>" }
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_healthy }
@@ -38,7 +40,7 @@ services:
   relay-2:
     build: .
     command: ["java", "-jar", "/app/relay.jar"]
-    environment: { INSTANCE_ID: relay-2 }
+    environment: { INSTANCE_ID: relay-2, STREAM_SUBJECTS: "orders.>,shipments.>" }
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_healthy }
@@ -69,9 +71,25 @@ services:
       postgres: { condition: service_healthy }
       nats:     { condition: service_healthy }
 
-  # --- Verifies ordering end to end and reports any FIFO violation.
+  # --- Consumes through the inbox. Verifies ordering end to end, counts raw
+  # --- arrivals outside the inbox so duplicates stay visible, and deliberately
+  # --- drops every 50th acknowledgement to force the redelivery the inbox has
+  # --- to absorb.
   consumer:
     build: .
     command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.ConsumerMain"]
+    environment: { CONSUMER_NAME: order-projector }
     depends_on:
-      nats: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  # --- Consume-and-produce in one transaction: claims the input, writes a
+  # --- shipment, and enqueues shipments.requested into its own outbox. The
+  # --- inbox and outbox compose here without either library knowing the other.
+  fulfilment:
+    build: .
+    command: ["java", "-cp", "/app/example.jar", "de.ebrahim.outbox.example.FulfilmentMain"]
+    environment: { CONSUMER_NAME: fulfilment }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }

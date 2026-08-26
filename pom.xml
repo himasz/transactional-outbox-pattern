@@ -12,6 +12,7 @@
 
   <modules>
     <module>outbox-core</module>
+    <module>inbox-core</module>
     <module>outbox-runner</module>
     <module>outbox-example</module>
   </modules>
