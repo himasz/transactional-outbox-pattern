@@ -105,7 +105,6 @@ public final class RelayEngine implements AutoCloseable {
         }
 
         drain(lease);
-        maybePurge();
     }
 
     private void drain(LeaderElector.Lease lease) throws Exception {
@@ -136,6 +135,8 @@ public final class RelayEngine implements AutoCloseable {
                     claimedToken = -1;
                     return;
                 }
+                //Move purge here to ensure that cleaning outbox tbl happens when there is none ending new added event
+                maybePurge();
             }
             // A short batch means the outbox is drained (or blocked behind an
             // in-flight transaction); stop and wait for the next nudge.
