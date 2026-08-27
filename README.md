@@ -1,10 +1,11 @@
-# Transactional Outbox
+# Transactional Patterns
 
-A library implementation of the Transactional Outbox pattern for PostgreSQL and NATS JetStream —
-for services that run as multiple replicas and can't use a distributed transaction to keep their
-database and their message broker in sync.
+Three transactional messaging patterns for PostgreSQL and NATS JetStream — the **outbox**, the
+**inbox**, and a **choreographed saga** that is just the two of them composed — for services that
+run as multiple replicas and can't use a distributed transaction to keep their database and their
+message broker in sync.
 
-**The idea in one sentence:** instead of writing to your database *and* publishing to NATS as two
+**The outbox, in one sentence:** instead of writing to your database *and* publishing to NATS as two
 separate steps that can fail independently, write the outgoing message as an ordinary row in the
 same transaction as your business data. A separate process then reads that row back and publishes
 it for real. One system to be atomic about, not two.
