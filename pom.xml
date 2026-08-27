@@ -15,6 +15,7 @@
     <module>inbox-core</module>
     <module>outbox-runner</module>
     <module>outbox-example</module>
+    <module>saga-example</module>
   </modules>
 
   <properties>

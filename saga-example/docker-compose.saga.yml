@@ -1,0 +1,80 @@
+# Choreographed saga demo. Fully independent of the root docker-compose.yml —
+# its own database, broker and relay — so both demos can be up at once.
+#
+#   docker compose -f saga-example/docker-compose.saga.yml up -d --build
+#   docker compose -f saga-example/docker-compose.saga.yml logs -f order payment inventory shipping
+#   docker compose -f saga-example/docker-compose.saga.yml exec -T postgres \
+#       psql -U outbox -d outbox -f - < saga-example/verify-saga.sql
+name: saga
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: outbox
+      POSTGRES_USER: outbox
+      POSTGRES_PASSWORD: outbox
+    ports: ["5433:5432"]           # 5433 so it can coexist with the outbox demo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outbox -d outbox"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports: ["4223:4222"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # --- One relay for the whole saga. Every participant writes to the same
+  # --- outbox table here because they share a database; four separate services
+  # --- in production means four databases and four relays, one each.
+  relay:
+    build: { context: .., dockerfile: saga-example/Dockerfile }
+    command: ["java", "-jar", "/app/relay.jar"]
+    environment:
+      INSTANCE_ID: saga-relay
+      STREAM_NAME: SAGA
+      STREAM_SUBJECTS: "saga.>"
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  # --- The four participants. Nothing connects them but the event stream:
+  # --- no shared code path, no RPC, no coordinator.
+  order:
+    build: { context: .., dockerfile: saga-example/Dockerfile }
+    command: ["java", "-jar", "/app/saga.jar"]
+    environment: { PARTICIPANT: order, ORDER_INTERVAL_MS: "500", INSTANCE_ID: gen }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  payment:
+    build: { context: .., dockerfile: saga-example/Dockerfile }
+    command: ["java", "-jar", "/app/saga.jar"]
+    environment: { PARTICIPANT: payment }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  inventory:
+    build: { context: .., dockerfile: saga-example/Dockerfile }
+    command: ["java", "-jar", "/app/saga.jar"]
+    environment: { PARTICIPANT: inventory }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
+
+  shipping:
+    build: { context: .., dockerfile: saga-example/Dockerfile }
+    command: ["java", "-jar", "/app/saga.jar"]
+    environment: { PARTICIPANT: shipping }
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_healthy }
