@@ -15,6 +15,10 @@ design if something on the far side absorbs the repeat, so `inbox-core` is that 
 trick run backwards, turning at-least-once *delivery* into exactly-once *effects*. See
 [The inbox](#the-inbox-the-other-half).
 
+**And what the two compose into.** An inbox that claims the input and an outbox that emits the
+next event, both on one connection, are all a choreographed saga needs — no coordinator, no state
+machine. `saga-example` is that, across four services. See [Choreographed saga](#choreographed-saga).
+
 See [FLOW.md](FLOW.md) for a start-to-finish trace of a message through the whole demo.
 
 ## Quick start
@@ -28,6 +32,9 @@ make down       # tear everything down
 ```
 
 Prerequisites: JDK 21, Maven 3.9+, Docker with Compose v2.
+
+The saga demo is separate — it runs its own Postgres, NATS and relay on their own ports via
+`saga-example/docker-compose.saga.yml`. See [Choreographed saga](#choreographed-saga).
 
 `make example` starts PostgreSQL, NATS with JetStream, **two** relay instances, **three**
 producer replicas writing concurrently, a consumer that checks ordering as messages arrive and
@@ -371,6 +378,41 @@ transaction and then stops having opinions about what else goes on it. The compo
 application code, which is the only layer that knows about both. `outbox-core` appears in
 `inbox-core` at *test* scope only, and only to prove this works.
 
+## Choreographed saga
+
+`saga-example` is where the two libraries compose, and it adds **no messaging machinery of its
+own**. A
+multi-service order saga — payment, then inventory, then shipping, with all three compensating
+paths including a two-service unwind — falls out of `inbox.process` + `outbox.enqueue` on one
+connection, looped:
+
+```java
+inbox.process(message, (tx, event) -> {
+    for (OutboxMessage out : step.apply(tx, event))   // change state, say what follows next
+        outbox.enqueue(tx, out);
+});
+```
+
+That handler is the entire implementation. It is the *Consume one event, produce another* section
+above, run in a loop across four services — no orchestrator, no state machine, no saga log.
+
+Participants run **unordered** on purpose. Choreography doesn't need message ordering, because
+causality is already enforced by the data: `inventory.rejected` can't overtake `order.created`
+when it doesn't exist until a step that consumed `order.created` has committed. Paying for
+`max_ack_pending = 1` here would buy a guarantee the workload already has for free.
+
+`verify-saga.sql` checks the outcome as invariants over ordinary business data, since there's no
+coordinator to ask whether it worked. The sharp one is stock conservation: every effect in the
+saga is naturally idempotent except `available = available - 1`, a read-modify-write a broken
+inbox would apply twice with nothing else noticing.
+
+The saga tests (`SagaStepTest`, `OrderSagaTest`) drive the wiring against real PostgreSQL with an
+in-memory bus — no broker, no sleeping — including every message delivered twice and the real
+`RelayEngine` on the same setup.
+
+See [saga-example/README.md](saga-example/README.md) for the full event graph, the compensation
+paths, and what's deliberately simplified.
+
 ## Layout
 
 `de.ebrahim.outbox` holds only the public entry points; everything else is one subpackage per
@@ -411,6 +453,11 @@ de.ebrahim.inbox
 ```
 
 The missing `election/` is the point, not an omission — see **No leader election** above.
+
+`saga-example` sits on top of both and introduces one type worth naming: `SagaParticipant`, the
+`inbox.process` + `outbox.enqueue` loop, plus a `SagaStep` per event it reacts to. Everything
+else in the module — the four services, the event envelope, the schema — is application code, not
+library.
 
 ## Schema
 
@@ -472,6 +519,14 @@ Two of these depend on behaviour no fake reproduces — how `ON CONFLICT DO UPDA
 visibility. Both predicates were checked by deleting them: dropping the `tx_id` guard fails
 `stagedHoleIsNotSkipped`, and dropping the `status` guard from the claim fails six tests.
 
+**saga** — the two libraries composed, with `InMemoryBus` (a pub/sub broker in twenty lines) and
+an explicit `settle()` loop instead of threads and sleeps.
+
+| Test | What it pins down |
+|---|---|
+| `SagaStepTest` | State change and outgoing event commit together; a failing step leaves neither behind and stays retryable; a duplicated input emits its event once; a step returning no events ends its branch; re-*creating* an event instead of replaying it defeats dedup and produces exactly the stock drift `verify-saga.sql` CHECK 7 reports |
+| `OrderSagaTest` | The happy path; all three compensating paths including the two-service cascade; every message delivered twice changes no outcome; stock and money invariants hold under contention; the real `RelayEngine` drives the same wiring |
+
 ## Known limitations and extensions
 
 ### Outbox
@@ -508,3 +563,16 @@ visibility. Both predicates were checked by deleting them: dropping the `tx_id` 
   substitute: a relay failover republishes the same logical message under a new one.
 - **A `DEAD` row needs a human.** Nothing retries it and nothing sweeps it. Alert on
   `count(*) FILTER (WHERE status = 'DEAD')`.
+
+### Saga (`saga-example`)
+
+- **No timeouts.** A saga that stalls because a participant is down stays stalled until it comes
+  back. Production wants a deadline per step and an escalation path — which is the point where
+  choreography starts wanting an orchestrator.
+- **One database, one relay for four services**, and one event envelope for nine event types.
+  Real deployment is a database and a relay each, with per-service event contracts. No code joins
+  across service tables, but the isolation is a convention here, not a boundary — hence the
+  `saga_` prefix on every table.
+- **`available = available - 1` is the one non-idempotent effect.** The saga leans on the inbox
+  to make it safe; `verify-saga.sql` CHECK 7 (stock conservation) is the invariant that would
+  catch it if the inbox ever failed.
